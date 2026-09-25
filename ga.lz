@@ -1,0 +1,202 @@
+# LarzGA - a genetic algorithm that evolves a text, written entirely in Larzscript.
+#
+#   larzscript ga.lz evolve --target="HELLO WORLD"
+#   larzscript ga.lz evolve --target="to be or not to be" --pop=200 --mutation=0.01 --seed=7
+#   larzscript ga.lz study --target="EVOLUTION" --runs=10
+#
+# A genetic algorithm searches by imitating evolution. Start with a population of
+# random strings. Score each by how many characters already match the target (its
+# "fitness"). Build the next generation by repeatedly (1) picking two parents, each
+# the best of 3 strings drawn at random (tournament selection), (2) crossing them
+# over at a random point (the child takes the first part of one parent and the
+# rest of the other) and (3) mutating each character with a small probability.
+# The single best string always survives unchanged (elitism), so the best fitness
+# never goes down. It stops when the target has been found.
+#
+# The point of the demonstration: nobody tells the algorithm HOW to spell the
+# target. Blind mutation alone would need on the order of 53^11 (about 10^19)
+# tries for an 11-letter target; selection plus crossover finds it in tens of generations.
+# It is a search method that works with only a score to guide it, which is what
+# makes it useful for problems where nothing better is known; it is a poor choice
+# when a direct method exists (here you could just print the target).
+#
+# All randomness comes from the "minstd" generator (x -> 48271 x mod 2^31-1) in a
+# fixed order, so --seed reproduces a run exactly on every machine.
+# tools/reference.py is an independent Python implementation using the same draws;
+# every generation count and best string matched before the tests were written.
+# The alphabet is the space and the 26 capital and 26 lower-case letters (53
+# characters); a target may use only those.
+
+import "cli" as cli
+import "table" as table
+import "args" as argmod
+
+fn fail(msg) { print("error: " + msg); exit(2) }
+
+let MOD = 2147483647
+let MUL = 48271
+let LETTERS = " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+
+fn rng_new(seed) {
+  let s = seed % MOD
+  if s == 0 { s = 1 }
+  return [s]
+}
+
+fn rng_next(r) {
+  r[0] = (MUL * r[0]) % MOD
+  return r[0] / MOD
+}
+
+fn number(s, what) {
+  let x = nil
+  try { x = float(s) } catch e { fail(what + " must be a number, got '" + str(s) + "'") }
+  return x
+}
+
+fn whole(s, what) {
+  let x = nil
+  try { x = int(float(s)) } catch e { fail(what + " must be a whole number, got '" + str(s) + "'") }
+  return x
+}
+
+# A random character: any of the 53 letters and the space.
+fn random_char(r, alphabet) { return alphabet[floor(rng_next(r) * len(alphabet))] }
+
+fn fitness(chars, target) {
+  let score = 0
+  let i = 0
+  while i < len(target) { if chars[i] == target[i] { score = score + 1 }; i = i + 1 }
+  return score
+}
+
+fn random_individual(r, n, alphabet) {
+  let s = []
+  let i = 0
+  while i < n { s.push(random_char(r, alphabet)); i = i + 1 }
+  return s
+}
+
+# The best of `size` individuals drawn at random (ties go to the one drawn first).
+fn tournament(r, pop, fit, size) {
+  let best = floor(rng_next(r) * len(pop))
+  let k = 1
+  while k < size {
+    let c = floor(rng_next(r) * len(pop))
+    if fit[c] > fit[best] { best = c }
+    k = k + 1
+  }
+  return best
+}
+
+fn joined(chars) {
+  let s = ""
+  for c in chars { s = s + c }
+  return s
+}
+
+# One evolution. Returns [generation the target was found (or -1), best string, history of [generation, best fitness]].
+fn evolve(target, popsize, mutation, seed, max_gen) {
+  let r = rng_new(seed)
+  let n = len(target)
+  let alphabet = LETTERS
+  let pop = []
+  let i = 0
+  while i < popsize { pop.push(random_individual(r, n, alphabet)); i = i + 1 }
+  let history = []
+  let gen = 0
+  let last_best = -1
+  while true {
+    let fit = []
+    for ind in pop { fit.push(fitness(ind, target)) }
+    let best = 0
+    i = 1
+    while i < popsize { if fit[i] > fit[best] { best = i }; i = i + 1 }
+    if fit[best] != last_best { history.push([gen, fit[best]]); last_best = fit[best] }
+    if fit[best] == n { return [gen, joined(pop[best]), history] }
+    if gen >= max_gen { return [-1, joined(pop[best]), history] }
+    let next_gen = [pop[best]]
+    while len(next_gen) < popsize {
+      let a = pop[tournament(r, pop, fit, 3)]
+      let b = pop[tournament(r, pop, fit, 3)]
+      let cut = floor(rng_next(r) * n)
+      let child = []
+      i = 0
+      while i < n { child.push(i < cut ? a[i] : b[i]); i = i + 1 }
+      i = 0
+      while i < n {
+        if rng_next(r) < mutation { child[i] = random_char(r, alphabet) }
+        i = i + 1
+      }
+      next_gen.push(child)
+    }
+    pop = next_gen
+    gen = gen + 1
+  }
+}
+
+fn check_target(t) {
+  if len(t) < 1 or len(t) > 60 { fail("--target must be from 1 to 60 characters, got " + str(len(t))) }
+  let i = 0
+  while i < len(t) {
+    let ok = false
+    let j = 0
+    while j < len(LETTERS) { if LETTERS[j] == t[i] { ok = true }; j = j + 1 }
+    if not ok { fail("--target may contain only letters and spaces; '" + t[i] + "' is not allowed") }
+    i = i + 1
+  }
+}
+
+fn settings(a) {
+  let target = str(argmod.flag(a, "target", "HELLO WORLD"))
+  let popsize = whole(argmod.flag(a, "pop", "100"), "--pop")
+  let mutation = number(argmod.flag(a, "mutation", "0.02"), "--mutation")
+  let seed = whole(argmod.flag(a, "seed", "1"), "--seed")
+  let max_gen = whole(argmod.flag(a, "max-gen", "2000"), "--max-gen")
+  check_target(target)
+  if popsize < 4 or popsize > 1000 { fail("--pop must be from 4 to 1000, got " + str(popsize)) }
+  if mutation < 0 or mutation > 1 { fail("--mutation must be from 0 to 1, got " + str(mutation)) }
+  if max_gen < 1 or max_gen > 100000 { fail("--max-gen must be from 1 to 100000, got " + str(max_gen)) }
+  return [target, popsize, mutation, seed, max_gen]
+}
+
+fn cmd_evolve(a) {
+  let s = settings(a)
+  let r = evolve(s[0], s[1], s[2], s[3], s[4])
+  print("target: " + s[0] + "  (" + str(len(s[0])) + " characters, population " + str(s[1]) + ", mutation rate " + str(s[2]) + ", seed " + str(s[3]) + ")")
+  let rows = [["Generation", "Best matches"]]
+  for h in r[2] { rows.push([str(h[0]), str(h[1]) + " of " + str(len(s[0]))]) }
+  print(table.render(rows))
+  if r[0] >= 0 { print("found the target in generation " + str(r[0]) + ": " + r[1]) }
+  else { print("no luck in " + str(s[4]) + " generations; the best was " + r[1]); exit(1) }
+}
+
+fn cmd_study(a) {
+  let s = settings(a)
+  let runs = whole(argmod.flag(a, "runs", "10"), "--runs")
+  if runs < 1 or runs > 100 { fail("--runs must be from 1 to 100, got " + str(runs)) }
+  let found = 0
+  let total = 0
+  let fastest = -1
+  let slowest = -1
+  let k = 0
+  while k < runs {
+    let r = evolve(s[0], s[1], s[2], s[3] + k, s[4])
+    if r[0] >= 0 {
+      found = found + 1
+      total = total + r[0]
+      if fastest == -1 or r[0] < fastest { fastest = r[0] }
+      if r[0] > slowest { slowest = r[0] }
+    }
+    k = k + 1
+  }
+  print(str(runs) + " runs (seeds " + str(s[3]) + " to " + str(s[3] + runs - 1) + ") evolving '" + s[0] + "' with population " + str(s[1]) + " and mutation " + str(s[2]) + ":")
+  if found == 0 { print("none found the target within " + str(s[4]) + " generations"); return }
+  print("found the target in " + str(found) + " of " + str(runs) + " runs; generations needed: fastest " + str(fastest) + ", slowest " + str(slowest) + ", average " + str(round(total / found, 1)))
+}
+
+let app = cli.new("ga", "a genetic algorithm that evolves a text, in Larzscript")
+cli.command(app, "evolve", "one run: evolve [--target=HELLO WORLD --pop=100 --mutation=0.02 --seed=1 --max-gen=2000]", fn(a) { cmd_evolve(a) })
+cli.command(app, "study", "many runs: study [same options] [--runs=10]", fn(a) { cmd_study(a) })
+
+cli.run(app, args)

@@ -1,0 +1,4 @@
+5 runs (seeds 1 to 5) evolving 'HELLO WORLD' with population 100 and mutation 0.02:
+found the target in 5 of 5 runs; generations needed: fastest 33, slowest 123, average 87.4
+4 runs (seeds 5 to 8) evolving 'HELLO' with population 100 and mutation 0.5:
+none found the target within 30 generations

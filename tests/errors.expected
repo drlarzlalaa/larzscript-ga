@@ -1,0 +1,13 @@
+error: --target must be from 1 to 60 characters, got 0
+error: --target may contain only letters and spaces; '1' is not allowed
+error: --target may contain only letters and spaces; '!' is not allowed
+error: --pop must be from 4 to 1000, got 3
+error: --pop must be from 4 to 1000, got 1001
+error: --mutation must be from 0 to 1, got 2
+error: --mutation must be from 0 to 1, got -0.1
+error: --mutation must be a number, got 'x'
+error: --max-gen must be from 1 to 100000, got 0
+error: --seed must be a whole number, got 'x'
+error: --runs must be from 1 to 100, got 0
+error: --runs must be from 1 to 100, got 101
+error: --target must be from 1 to 60 characters, got 61
