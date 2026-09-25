@@ -11,4 +11,4 @@ $LZ evolve --max-gen=0
 $LZ evolve --seed=x
 $LZ study --runs=0
 $LZ study --runs=101
-$LZ evolve --target=$(cat /tmp/ga-long.txt)
+$LZ evolve --target="$(head -c 61 /dev/zero | tr "\0" X)"
